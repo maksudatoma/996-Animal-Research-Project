@@ -1,0 +1,1169 @@
+---
+title: "Animal Research"
+format: pdf
+editor: visual
+---
+
+
+## Convert .txt file to xlsx
+
+```{r}
+library(tidyverse)
+library(readr)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"   # root folder with Batch_01 ... Batch_12
+
+# ================================
+# Helper to convert one .txt → .xlsx
+# ================================
+convert_txt_to_excel <- function(file) {
+  # Read txt (let readr guess separator)
+  df <- read_table(file, col_names = TRUE, guess_max = 10000)
+  
+  # Build output file path (.xlsx instead of .txt)
+  out_file <- sub(".txt$", ".xlsx", file)
+  
+  # Write as Excel
+  write_xlsx(df, out_file)
+  
+  message("Converted: ", basename(file), " → ", basename(out_file))
+}
+
+# ================================
+# Loop through all batches
+# ================================
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  # Find the two .txt files
+  meals_file   <- list.files(batch_path, pattern = "meals.*\\.txt$", full.names = TRUE)
+  animals_file <- list.files(batch_path, pattern = "animals.*\\.txt$", full.names = TRUE)
+  
+  # Convert both if present
+  if (length(meals_file) > 0)   convert_txt_to_excel(meals_file)
+  if (length(animals_file) > 0) convert_txt_to_excel(animals_file)
+}
+
+```
+
+
+```{r}
+library(tidyverse)
+library(readr)
+library(writexl)
+
+# ================================
+# Helper to convert animal .txt → .xlsx using fixed-width
+# ================================
+convert_animals_txt_to_excel <- function(file) {
+  # Read as fixed-width file, splitting on whitespace
+  df <- read_table(file, col_names = FALSE, col_types = cols(.default = "c"), na = c("", "NA"),
+                   progress = FALSE, comment = "")
+  
+  # Keep only first 17 columns (drop extra parsing noise)
+  df <- df[, 1:17]
+  
+  # Assign correct 17 column names
+  colnames(df) <- c("animal_id", "sex", "farrowing_group", "line", "sire", "sire_line",
+                    "week8_weigh_date", "week8_weight",
+                    "weight_date", "weight",
+                    "week22_weigh_date", "week22_weight",
+                    "weight_date2", "weight2",
+                    "disposal_date", "disposal_code", "disposal_reason")
+  
+  # Output file path (.xlsx instead of .txt)
+  out_file <- sub(".txt$", ".xlsx", file)
+  
+  # Write cleaned data to Excel
+  write_xlsx(df, out_file)
+  
+  message("Converted Animals: ", basename(file), " → ", basename(out_file))
+}
+
+# ================================
+# Loop through all batches
+# ================================
+data_dir <- "Raw Data"
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  animals_file <- list.files(batch_path, pattern = "animals.*\\.txt$", full.names = TRUE)
+  
+  if (length(animals_file) > 0) convert_animals_txt_to_excel(animals_file)
+}
+
+```
+
+
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(janitor)
+
+# ================================
+# Meals
+# ================================
+
+
+clean_meals <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)
+  
+  if (ncol(df) == 9) {
+    # Batch_01 style (with date_alt)
+    colnames(df) <- c("animal_id", "pen", "date", "date_alt",
+                      "meals", "total_time_mins", 
+                      "start_time", "end_time", "span_time")
+  } else if (ncol(df) == 8) {
+    # Batch_02–12 style (no date_alt)
+    colnames(df) <- c("animal_id", "pen", "date",
+                      "meals", "total_time_mins",
+                      "start_time", "end_time", "span_time")
+    # Add placeholder for missing date_alt (so structure stays consistent)
+    df <- df %>% mutate(date_alt = NA, .after = date)
+  } else {
+    stop(paste("Unexpected number of columns in file:", file))
+  }
+  
+  df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id))
+}
+
+
+# ================================
+# Animals
+# ================================
+clean_animals <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)
+  colnames(df) <- c("animal_id", "sex", "farrowing_group", "line", "sire", "sire_line",
+                    "week8_weigh_date", "week8_weight",
+                    "week22_weigh_date", "week22_weight",
+                    "disposal_date", "disposal_code", "disposal_reason")
+  df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id))
+}
+
+# ================================
+# EIDs
+# ================================
+clean_eids <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)
+  colnames(df) <- c("animal_id", "rfid_count", "application_date")
+  df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id))
+}
+
+# ================================
+# First/Last Date
+# ================================
+clean_first_last_date <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)
+  colnames(df) <- c("date", "first_visit", "last_visit",
+                    "hours_between", "batch_id", "animals_count")
+  df %>%
+    mutate(batch = batch)
+}
+
+# ================================
+# First/Last Pen
+# ================================
+clean_first_last_pen <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)
+  colnames(df) <- c("date", "pen", "first_visit", "last_visit",
+                    "hours_between", "batch_id", "animals_count")
+  df %>%
+    mutate(batch = batch)
+}
+
+# ================================
+# Health
+# ================================
+clean_health <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)
+  colnames(df) <- c("animal_id", "health_date", "symptom")
+  df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id))
+}
+
+```
+
+
+```{r}
+batch_path <- "Raw Data/Batch_12"
+
+meals_file   <- list.files(batch_path, pattern = "meals.*\\.xlsx$", full.names = TRUE)[1]
+animals_file <- list.files(batch_path, pattern = "animals.*\\.xlsx$", full.names = TRUE)[1]
+eids_file    <- list.files(batch_path, pattern = "eids.*\\.xlsx$", full.names = TRUE)[1]
+fl_date_file <- list.files(batch_path, pattern = "first_last_date.*\\.xlsx$", full.names = TRUE)[1]
+fl_pen_file  <- list.files(batch_path, pattern = "first_last_pen.*\\.xlsx$", full.names = TRUE)[1]
+health_file  <- list.files(batch_path, pattern = "health.*\\.xlsx$", full.names = TRUE)[1]
+
+meals   <- clean_meals(meals_file, "Batch_12")
+animals <- clean_animals(animals_file, "Batch_12")
+eids    <- clean_eids(eids_file, "Batch_12")
+fl_date <- clean_first_last_date(fl_date_file, "Batch_12")
+fl_pen  <- clean_first_last_pen(fl_pen_file, "Batch_12")
+health  <- clean_health(health_file, "Batch_12")
+
+```
+
+
+### Fix the column name for meals
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir <- file.path(data_dir, "meals_cleaned")
+
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# ================================
+# Helper function
+# ================================
+read_meals_clean <- function(file, batch) {
+  df <- read_excel(file, col_names = FALSE)   # ignore existing messy headers
+  
+  # Force correct variable names
+  colnames(df) <- c("animal_id", "pen", "date", "date_alt",
+                    "meals", "total_time_mins", 
+                    "start_time", "end_time", "span_time")
+  
+  df <- df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id))
+  
+  return(df)
+}
+
+# ================================
+# Loop over all batches
+# ================================
+all_meals <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  meals_file <- list.files(batch_path, pattern = "meals.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(meals_file)) {
+    meals_clean <- read_meals_clean(meals_file, batch_name)
+    
+    # Save cleaned file into output folder
+    out_file <- file.path(output_dir, paste0(batch_name, "_meals_clean.xlsx"))
+    write_xlsx(meals_clean, out_file)
+    
+    message("Cleaned meals file saved for ", batch_name, " → ", out_file)
+    
+    all_meals[[b]] <- meals_clean
+  } else {
+    message(" No meals file found for ", batch_name)
+  }
+}
+
+# ================================
+# Bind all into one big file
+# ================================
+all_meals_df <- bind_rows(all_meals)
+
+write_xlsx(all_meals_df, file.path(output_dir, "all_batches_meals_clean.xlsx"))
+cat("Combined cleaned meals file saved in:", output_dir, "\n")
+
+```
+
+
+
+
+## Meals
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir <- file.path(data_dir, "meals_cleaned")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# ================================
+# Helper function
+# ================================
+clean_and_save_meals <- function(batch_num) {
+  batch_name <- sprintf("Batch_%02d", batch_num)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  meals_file <- list.files(batch_path, pattern = "meals.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(meals_file)) {
+    # Read raw file WITHOUT using first row as colnames
+    df <- read_excel(meals_file, col_names = FALSE)
+    
+    # Batch 01 has 10 cols (with date_alt), drop it
+    if (batch_num == 1) {
+      colnames(df) <- c("animal_id", "pen", "date", "date_alt",
+                        "meals", "total_time_mins",
+                        "start_time", "end_time", "span_time")
+      df <- df %>% select(-date_alt)
+    } else {
+      # Batches 2–12 → 9 cols only
+      colnames(df) <- c("animal_id", "pen", "date",
+                        "meals", "total_time_mins",
+                        "start_time", "end_time", "span_time")
+    }
+    
+    # Add batch col + enforce types
+    df <- df %>%
+      mutate(batch = batch_name,
+             animal_id = as.character(animal_id),
+             pen = as.character(pen),
+             meals = as.numeric(meals),
+             total_time_mins = as.numeric(total_time_mins),
+             span_time = as.numeric(span_time))
+    
+    # Save cleaned file
+    out_file <- file.path(output_dir, paste0(batch_name, "_meals_clean.xlsx"))
+    write_xlsx(df, out_file)
+    
+    message("Cleaned meals saved for ", batch_name, " → ", out_file)
+    return(df)
+  } else {
+    message(" No meals file found for ", batch_name)
+    return(NULL)
+  }
+}
+
+# ================================
+# Run for all 12 batches
+# ================================
+all_meals <- lapply(1:12, clean_and_save_meals)
+
+# ================================
+# Save one combined Excel file
+# ================================
+all_meals_df <- bind_rows(all_meals[!sapply(all_meals, is.null)])
+write_xlsx(all_meals_df, file.path(output_dir, "all_batches_meals_clean.xlsx"))
+
+cat("Cleaned Excel meals files saved in:", output_dir, "\n")
+
+```
+
+
+## Animal_cleaned
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir <- file.path(data_dir, "animals_cleaned")
+
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# ================================
+# Helper function
+# ================================
+
+read_animals_clean <- function(file, batch) {
+  # Read with headers
+  df <- read_excel(file, col_names = TRUE)
+  
+  # Replace headers with consistent names
+  colnames(df) <- c("animal_id", "sex", "farrowing_group", "line", "sire", "sire_line",
+                    "week8_weigh_date", "week8_weight",
+                    "weight_date", "weight",
+                    "week22_weigh_date", "week22_weight",
+                    "weight_date2", "weight2",
+                    "disposal_date", "disposal_code", "disposal_reason")
+  
+  df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id))
+}
+
+animals_clean <- animals_clean %>% slice(-1)
+
+
+# ================================
+# Loop over all batches
+# ================================
+all_animals <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  animals_file <- list.files(batch_path, pattern = "animals.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(animals_file)) {
+    animals_clean <- read_animals_clean(animals_file, batch_name)
+    
+    #  Remove the first data row ("Animal Sex Farrowing ...")
+    animals_clean <- animals_clean %>% slice(-1)
+    
+    # Save cleaned file into output folder
+    out_file <- file.path(output_dir, paste0(batch_name, "_animals_clean.xlsx"))
+    write_xlsx(animals_clean, out_file)
+    
+    message("Cleaned animals file saved for ", batch_name, " → ", out_file)
+    
+    all_animals[[b]] <- animals_clean
+  } else {
+    message(" No animals file found for ", batch_name)
+  }
+}
+
+
+# ================================
+# Save one combined Excel file
+# ================================
+all_animals_df <- bind_rows(all_animals)
+write_xlsx(all_animals_df, file.path(output_dir, "all_batches_animals_clean.xlsx"))
+
+cat("Combined cleaned animals file saved in:", output_dir, "\n")
+
+```
+```{r}
+all_animals <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  # more flexible pattern
+  animals_file <- list.files(batch_path, pattern = "[Aa]nimals.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(animals_file)) {
+    animals_clean <- read_animals_clean(animals_file, batch_name) %>% slice(-1)  # drop stray header row
+    out_file <- file.path(output_dir, paste0(batch_name, "_animals_clean.xlsx"))
+    write_xlsx(animals_clean, out_file)
+    message("Cleaned animals file saved for ", batch_name, " → ", out_file)
+    all_animals[[batch_name]] <- animals_clean
+  } else {
+    message(" No animals file found for ", batch_name)
+  }
+}
+
+# Combine non-NULL elements
+all_animals_df <- bind_rows(all_animals[!sapply(all_animals, is.null)])
+write_xlsx(all_animals_df, file.path(output_dir, "all_batches_animals_clean.xlsx"))
+
+cat(" Combined cleaned animals file saved with ", nrow(all_animals_df), " rows.\n")
+
+# ================================
+# Save one combined Excel file
+# ================================
+all_animals_df <- bind_rows(all_animals)
+write_xlsx(all_animals_df, file.path(output_dir, "all_batches_animals_clean.xlsx"))
+
+cat("Combined cleaned animals file saved in:", output_dir, "\n")
+
+```
+
+
+## Health
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir_health <- file.path(data_dir, "health_cleaned")
+
+if (!dir.exists(output_dir_health)) dir.create(output_dir_health)
+
+# ================================
+# Helper: Clean Health
+# ================================
+read_health_clean <- function(file, batch_num) {
+  df <- read_excel(file, col_names = TRUE)
+  
+  #  Batch 1 & 2 have extra columns (Date..2, Date..3)
+  if (batch_num %in% c(1, 2)) {
+    df <- df %>% select(animal_id = 1, health_date = 2, symptom = 4)
+  } else {
+    #  Batches 3–12 already have correct 3 cols
+    df <- df %>% select(animal_id = 1, health_date = 2, symptom = 3)
+  }
+  
+  colnames(df) <- c("animal_id", "health_date", "symptom")
+  
+  df <- df %>%
+    mutate(batch = sprintf("Batch_%02d", batch_num),
+           animal_id = as.character(animal_id),
+           symptom = as.character(symptom)) %>%
+    slice(-1)  # remove any stray header row inside file
+  
+  return(df)
+}
+
+# ================================
+# Loop over all batches
+# ================================
+all_health <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  health_file <- list.files(batch_path, pattern = "[Hh]ealth.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(health_file)) {
+    health_clean <- read_health_clean(health_file, b)
+    out_file <- file.path(output_dir_health, paste0(batch_name, "_health_clean.xlsx"))
+    write_xlsx(health_clean, out_file)
+    message("Cleaned health file saved for ", batch_name, " → ", out_file)
+    all_health[[batch_name]] <- health_clean
+  } else {
+    message(" No health file found for ", batch_name)
+  }
+}
+
+# ================================
+# Save one combined Excel file
+# ================================
+all_health_df <- bind_rows(all_health[!sapply(all_health, is.null)])
+write_xlsx(all_health_df, file.path(output_dir_health, "all_batches_health_clean.xlsx"))
+
+cat(" Combined cleaned health file saved in:", output_dir_health, "\n")
+
+```
+
+
+
+
+## EID
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir_eids <- file.path(data_dir, "eids_cleaned")
+
+if (!dir.exists(output_dir_eids)) dir.create(output_dir_eids)
+if (!dir.exists(output_dir_health)) dir.create(output_dir_health)
+
+# ================================
+# Helper: Clean EIDs
+# ================================
+read_eids_clean <- function(file, batch) {
+  df <- read_excel(file, col_names = TRUE)
+  
+  colnames(df) <- c("animal_id", "rfid_count", "application_date")
+  
+  df <- df %>%
+    mutate(batch = batch,
+           animal_id = as.character(animal_id)) %>%
+    slice(-1)  # remove stray header row if present
+  
+  return(df)
+}
+
+
+# ================================
+# Loop over all batches
+# ================================
+all_eids <- list()
+all_health <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  # EIDs
+  eids_file <- list.files(batch_path, pattern = "eids.*\\.xlsx$", full.names = TRUE)[1]
+  if (!is.na(eids_file)) {
+    eids_clean <- read_eids_clean(eids_file, batch_name)
+    out_file <- file.path(output_dir_eids, paste0(batch_name, "_eids_clean.xlsx"))
+    write_xlsx(eids_clean, out_file)
+    message("Cleaned EIDs file saved for ", batch_name)
+    all_eids[[b]] <- eids_clean
+  }
+  
+  
+}
+
+# ================================
+# Save combined master files
+# ================================
+all_eids_df <- bind_rows(all_eids)
+write_xlsx(all_eids_df, file.path(output_dir_eids, "all_batches_eids_clean.xlsx"))
+
+cat(" Combined EIDs and Health files saved in:", output_dir_eids, "and", output_dir_health, "\n")
+
+```
+
+## First date/last date
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir_fl_date <- file.path(data_dir, "first_last_date_cleaned")
+
+if (!dir.exists(output_dir_fl_date)) dir.create(output_dir_fl_date)
+
+# ================================
+# Helper: Clean First/Last Date
+# ================================
+read_fl_date_clean <- function(file, batch) {
+  df <- read_excel(file, col_names = TRUE)
+  
+  # Keep first 6 cols
+  df <- df[, 1:6]
+  
+  # Rename columns
+  colnames(df) <- c("date", "first_visit", "last_visit", 
+                    "hours_between", "batch_id", "animals_count")
+  
+  df %>%
+    mutate(batch = batch,
+           date = as.character(date),
+           first_visit = as.character(first_visit),
+           last_visit = as.character(last_visit),
+           hours_between = as.numeric(hours_between),
+           batch_id = as.character(batch_id),
+           animals_count = as.numeric(animals_count)) %>%
+    slice(-1)  # drop stray header row
+}
+
+# ================================
+# Loop over all batches
+# ================================
+all_fl_date <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  fl_date_file <- list.files(batch_path, pattern = "first_last_date.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(fl_date_file)) {
+    fl_date_clean <- read_fl_date_clean(fl_date_file, batch_name)
+    
+    # Save per-batch cleaned file
+    out_file <- file.path(output_dir_fl_date, paste0(batch_name, "_fl_date_clean.xlsx"))
+    write_xlsx(fl_date_clean, out_file)
+    
+    message("Cleaned First/Last Date file saved for ", batch_name, " → ", out_file)
+    all_fl_date[[batch_name]] <- fl_date_clean
+  } else {
+    message("No first_last_date file found for ", batch_name)
+  }
+}
+
+# ================================
+# Save one combined Excel file
+# ================================
+all_fl_date_df <- bind_rows(all_fl_date[!sapply(all_fl_date, is.null)])
+write_xlsx(all_fl_date_df, file.path(output_dir_fl_date, "all_batches_fl_date_clean.xlsx"))
+
+cat("Combined cleaned first_last_date file saved in:", output_dir_fl_date, "\n")
+
+```
+
+
+## First/last pen
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+output_dir_fl_pen <- file.path(data_dir, "first_last_pen_cleaned")
+
+if (!dir.exists(output_dir_fl_pen)) dir.create(output_dir_fl_pen)
+
+# ================================
+# Helper: Clean First/Last Pen
+# ================================
+read_fl_pen_clean <- function(file, batch) {
+  df <- read_excel(file, col_names = TRUE)
+  
+  # Handle Batch 1–2 (extra cols)
+  if (ncol(df) > 7) {
+    df <- df[, c(1, 3, 4, 6, 8, 9, 10)]  # pick the useful 7 columns
+  }
+  
+  # Rename consistently
+  colnames(df) <- c("date", "pen", "first_visit", "last_visit", 
+                    "hours_between", "batch_id", "animals_count")
+  
+  df %>%
+    mutate(batch = batch,
+           date = as.character(date),
+           pen = as.character(pen),
+           first_visit = as.character(first_visit),
+           last_visit = as.character(last_visit),
+           hours_between = as.numeric(hours_between),
+           batch_id = as.character(batch_id),
+           animals_count = as.numeric(animals_count)) %>%
+    slice(-1)  # drop stray header row if present
+}
+
+# ================================
+# Loop over all batches
+# ================================
+all_fl_pen <- list()
+
+for (b in 1:12) {
+  batch_name <- sprintf("Batch_%02d", b)
+  batch_path <- file.path(data_dir, batch_name)
+  
+  fl_pen_file <- list.files(batch_path, pattern = "first_last_pen.*\\.xlsx$", full.names = TRUE)[1]
+  
+  if (!is.na(fl_pen_file)) {
+    fl_pen_clean <- read_fl_pen_clean(fl_pen_file, batch_name)
+    
+    # Save per-batch cleaned file
+    out_file <- file.path(output_dir_fl_pen, paste0(batch_name, "_fl_pen_clean.xlsx"))
+    write_xlsx(fl_pen_clean, out_file)
+    
+    message("Cleaned First/Last Pen file saved for ", batch_name, " → ", out_file)
+    all_fl_pen[[batch_name]] <- fl_pen_clean
+  } else {
+    message(" No first_last_pen file found for ", batch_name)
+  }
+}
+
+# ================================
+# Save one combined Excel file
+# ================================
+all_fl_pen_df <- bind_rows(all_fl_pen[!sapply(all_fl_pen, is.null)])
+write_xlsx(all_fl_pen_df, file.path(output_dir_fl_pen, "all_batches_fl_pen_clean.xlsx"))
+
+cat("Combined cleaned first_last_pen file saved in:", output_dir_fl_pen, "\n")
+
+```
+
+
+## All combinations
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+
+meals   <- read_excel(file.path(data_dir, "meals_cleaned/all_batches_meals_clean.xlsx"))
+animals <- read_excel(file.path(data_dir, "animals_cleaned/all_batches_animals_clean.xlsx"))
+health  <- read_excel(file.path(data_dir, "health_cleaned/all_batches_health_clean.xlsx"))
+eids    <- read_excel(file.path(data_dir, "eids_cleaned/all_batches_eids_clean.xlsx"))
+fl_date <- read_excel(file.path(data_dir, "first_last_date_cleaned/all_batches_fl_date_clean.xlsx"))
+fl_pen  <- read_excel(file.path(data_dir, "first_last_pen_cleaned/all_batches_fl_pen_clean.xlsx"))
+
+# ================================
+# Join step by step
+# ================================
+master <- meals %>%
+  left_join(animals, by = c("animal_id", "batch")) %>%
+  left_join(eids,    by = c("animal_id", "batch")) %>%
+  left_join(health,  by = "animal_id") %>%
+  left_join(fl_date, by = c("batch", "date")) %>%
+  left_join(fl_pen,  by = c("batch", "date", "pen"))
+
+# ================================
+# Save Master Excel
+# ================================
+write_xlsx(master, file.path(data_dir, "all_batches_master.xlsx"))
+
+cat(" Final master Excel saved at:", file.path(data_dir, "all_batches_master.xlsx"), "\n")
+
+```
+
+## Part by part join
+
+**MEAL, Health, EID**
+
+```{r}
+names(meals)
+names(eids)
+names(health)
+
+
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+data_dir <- "Raw Data"
+
+# Load datasets
+meals   <- read_excel(file.path(data_dir, "meals_cleaned/all_batches_meals_clean.xlsx"))
+health  <- read_excel(file.path(data_dir, "health_cleaned/all_batches_health_clean.xlsx"))
+eids    <- read_excel(file.path(data_dir, "eids_cleaned/all_batches_eids_clean.xlsx"))
+
+# Force animal_id to character for consistency
+meals   <- meals   %>% mutate(animal_id = as.character(animal_id))
+health  <- health  %>% mutate(animal_id = as.character(animal_id))
+eids    <- eids    %>% mutate(animal_id = as.character(animal_id))
+
+# Correct joins
+master_meals_health_eids <- meals %>%
+  left_join(eids,   by = c("animal_id", "batch")) %>%
+  left_join(health, by = c("animal_id", "batch"))
+
+# Save output
+out_file <- file.path(data_dir, "all_batches_master_meals_health_eids_RAW.xlsx")
+write_xlsx(master_meals_health_eids, out_file)
+
+cat(" Master file (meals + eids + raw health symptoms) saved at:", out_file, "\n")
+
+# QC check
+print(colSums(is.na(master_meals_health_eids)))
+
+
+```
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+data_dir <- "Raw Data"
+
+# ================================
+# Load your already created master
+# ================================
+master_meals_health_eids <- read_excel(
+  file.path(data_dir, "all_batches_master_meals_health_eids_RAW.xlsx")
+)
+
+# Load the animals file
+animals <- read_excel(
+  file.path(data_dir, "animals_cleaned/all_batches_animals_clean.xlsx")
+)
+
+# ================================
+# Make sure IDs and batches align
+# ================================
+master_meals_health_eids <- master_meals_health_eids %>%
+  mutate(animal_id = as.character(animal_id),
+         batch = as.character(batch))
+
+animals <- animals %>%
+  mutate(animal_id = as.character(animal_id),
+         batch = as.character(batch))
+
+# ================================
+# Join
+# ================================
+master_with_animals <- master_meals_health_eids %>%
+  left_join(animals, by = c("animal_id", "batch"))
+
+# ================================
+# Save output
+# ================================
+out_file <- file.path(data_dir, "all_batches_master_meals_health_eids_animals.xlsx")
+write_xlsx(master_with_animals, out_file)
+
+cat("Final master file with animals added saved at:", out_file, "\n")
+
+# Quick QC
+print(dim(master_with_animals))
+print(colSums(is.na(master_with_animals)))
+
+```
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+# ================================
+# Paths
+# ================================
+data_dir <- "Raw Data"
+
+# ================================
+# Load the cleaned datasets
+# ================================
+meals   <- read_excel(file.path(data_dir, "meals_cleaned/all_batches_meals_clean.xlsx"))
+health  <- read_excel(file.path(data_dir, "health_cleaned/all_batches_health_clean.xlsx"))
+eids    <- read_excel(file.path(data_dir, "eids_cleaned/all_batches_eids_clean.xlsx"))
+
+# ================================
+# Summarize health (avoid duplication of meal rows)
+# ================================
+health_summary <- health %>%
+  group_by(animal_id, batch) %>%
+  summarise(
+    first_issue = min(health_date, na.rm = TRUE),  # earliest health event
+    n_issues = n(),                                # total number of health events
+    .groups = "drop"
+  )
+
+# ================================
+# Merge: meals (base) + eids + health summary
+# ================================
+master_meals_health_eids <- meals %>%
+  left_join(eids,          by = c("animal_id", "batch")) %>%
+  left_join(health_summary, by = c("animal_id", "batch"))
+
+# ================================
+# Save merged file
+# ================================
+out_file <- file.path(data_dir, "all_batches_master_meals_health_eids.xlsx")
+write_xlsx(master_meals_health_eids, out_file)
+
+cat(" Master file (meals + health + eids) saved at:", out_file, "\n")
+
+```
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(writexl)
+
+data_dir <- "Raw Data"
+
+# ================================
+# Load all all_batches files
+# ================================
+meals   <- read_excel(file.path(data_dir, "meals_cleaned/all_batches_meals_clean.xlsx"))
+animals <- read_excel(file.path(data_dir, "animals_cleaned/all_batches_animals_clean.xlsx"))
+health  <- read_excel(file.path(data_dir, "health_cleaned/all_batches_health_clean.xlsx"))
+eids    <- read_excel(file.path(data_dir, "eids_cleaned/all_batches_eids_clean.xlsx"))
+fl_date <- read_excel(file.path(data_dir, "first_last_date_cleaned/all_batches_fl_date_clean.xlsx"))
+fl_pen  <- read_excel(file.path(data_dir, "first_last_pen_cleaned/all_batches_fl_pen_clean.xlsx"))
+
+# ================================
+# Summarize health per animal
+# ================================
+health_summary <- health %>%
+  group_by(animal_id, batch) %>%
+  summarise(
+    first_issue = min(health_date, na.rm = TRUE),
+    n_issues = n(),
+    .groups = "drop"
+  )
+
+# ================================
+# Join step by step
+# ================================
+master <- meals %>%
+  left_join(animals, by = c("animal_id", "batch")) %>%
+  left_join(eids,    by = c("animal_id", "batch")) %>%
+  left_join(health_summary, by = c("animal_id", "batch")) %>%
+  left_join(fl_date %>% select(-batch_id), by = c("batch", "date")) %>%   # drop batch_id
+  left_join(fl_pen %>% select(-batch_id),  by = c("batch", "date", "pen")) # drop batch_id
+
+# ================================
+# Save Master Excel
+# ================================
+write_xlsx(master, file.path(data_dir, "all_batches_master.xlsx"))
+
+cat("Final master Excel saved at:", file.path(data_dir, "all_batches_master.xlsx"), "\n")
+
+```
+
+
+## Checking the dataset
+
+```{r}
+batch12 <- read_excel("Raw Data/meals_cleaned/Batch_12_meals_clean.xlsx")
+str(batch12$span_time)
+
+```
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+
+# ================================
+# Path to the meals file
+# ================================
+data_dir <- "Raw Data/meals_cleaned"
+meals_file <- file.path(data_dir, "all_batches_meals_clean.xlsx")
+
+# Read the file
+meals <- read_excel(meals_file)
+
+# ================================
+# Basic structure
+# ================================
+glimpse(meals)
+
+# ================================
+# Column-wise summary
+# ================================
+summary(meals)
+
+# ================================
+# Quick check: missing values
+# ================================
+colSums(is.na(meals))
+
+# ================================
+# Distribution checks
+# ================================
+meals %>%
+  summarise(
+    n_rows = n(),
+    unique_batches = n_distinct(batch),
+    unique_animals = n_distinct(animal_id),
+    min_date = min(date, na.rm = TRUE),
+    max_date = max(date, na.rm = TRUE),
+    min_meals = min(as.numeric(meals), na.rm = TRUE),
+    max_meals = max(as.numeric(meals), na.rm = TRUE),
+    min_span = min(as.numeric(span_time), na.rm = TRUE),
+    max_span = max(as.numeric(span_time), na.rm = TRUE)
+  )
+
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+
+# ================================
+# Path to the animals file
+# ================================
+data_dir <- "Raw Data/animals_cleaned"
+animals_file <- file.path(data_dir, "all_batches_animals_clean.xlsx")
+
+# Read the file
+animals <- read_excel(animals_file)
+
+# ================================
+# Basic structure
+# ================================
+glimpse(animals)
+
+# ================================
+# Column-wise summary
+# ================================
+summary(animals)
+
+# ================================
+# Quick check: missing values
+# ================================
+colSums(is.na(animals))
+
+# ================================
+# Distribution checks
+# ================================
+animals %>%
+  summarise(
+    n_rows = n(),
+    unique_batches = n_distinct(batch),
+    unique_animals = n_distinct(animal_id),
+    min_week8_weight = min(as.numeric(week8_weight), na.rm = TRUE),
+    max_week8_weight = max(as.numeric(week8_weight), na.rm = TRUE),
+    min_week22_weight = min(as.numeric(week22_weight), na.rm = TRUE),
+    max_week22_weight = max(as.numeric(week22_weight), na.rm = TRUE),
+    min_weight2 = min(as.numeric(weight2), na.rm = TRUE),
+    max_weight2 = max(as.numeric(weight2), na.rm = TRUE)
+  )
+
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+
+# ================================
+# Path to the health file
+# ================================
+data_dir <- "Raw Data/health_cleaned"
+health_file <- file.path(data_dir, "all_batches_health_clean.xlsx")
+
+# Read the file
+health <- read_excel(health_file)
+
+# ================================
+# Basic structure
+# ================================
+glimpse(health)
+
+# ================================
+# Column-wise summary
+# ================================
+summary(health)
+
+# ================================
+# Quick check: missing values
+# ================================
+colSums(is.na(health))
+
+# ================================
+# Distribution checks
+# ================================
+health %>%
+  summarise(
+    n_rows = n(),
+    unique_batches = n_distinct(batch),
+    unique_animals = n_distinct(animal_id),
+    min_date = min(as.Date(health_date), na.rm = TRUE),
+    max_date = max(as.Date(health_date), na.rm = TRUE),
+    unique_symptoms = n_distinct(symptom)
+  )
+
+# ================================
+# Symptom frequency
+# ================================
+health %>%
+  count(symptom, sort = TRUE)
+
+# ================================
+# Batch-wise symptom counts
+# ================================
+health %>%
+  count(batch, symptom, sort = TRUE)
+
+```
+
+
+
